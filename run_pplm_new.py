@@ -347,11 +347,12 @@ def generate_text_pplm(
             last if output_so_far is None
             else torch.cat((output_so_far, last), dim=1)
         )
+        if tokenizer.decode(last.tolist()[0])==tokenizer.bos_token:
+            break
         response = (
             last if response is None
             else torch.cat((response, last), dim=1)
         )
-        if tokenizer.decode(last.tolist()[0])=='<|endoftext|>':
-            break
+
 
     return response, unpert_discrim_loss, loss_in_time
