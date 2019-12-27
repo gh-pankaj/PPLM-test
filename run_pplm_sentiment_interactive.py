@@ -17,8 +17,8 @@ discrim_meta_file='SST_classifier_head_meta-3.json'
 PPLM_DISCRIM = 2
 loss_type = PPLM_DISCRIM
 
-class_label='positive'
-num_samples=1
+class_label='negative'
+num_samples=3
 
 def get_classifier(
         discrim_meta: Optional[dict],
@@ -118,41 +118,50 @@ while True:
             context_t if output_so_far is None
             else torch.cat((output_so_far, context_t), dim=1)
         )
-    pert_gen_tok_text, discrim_loss, loss_in_time = generate_text_pplm(
-        model=model,
-        tokenizer=tokenizer,
-        output_so_far=output_so_far,
-        device=device,
-        perturb=True,
-        classifier=classifier,
-        class_label=class_id,
-        loss_type=loss_type,
-        length=200,
-        stepsize=0.05,
-        temperature=1.0,
-        top_k=10,
-        sample=True,
-        num_iterations=2,
-        grad_length=10000,
-        horizon_length=1,
-        window_length=0,
-        decay=False,
-        gamma=1,
-        gm_scale=0.8,
-        kl_scale=0.01
-    )
+    min_discrim_loss=np.infty
+    selected_pert_gen_tok_text=None
+    for i in range(num_samples):
+        pert_gen_tok_text, discrim_loss, loss_in_time = generate_text_pplm(
+            model=model,
+            tokenizer=tokenizer,
+            output_so_far=output_so_far,
+            device=device,
+            perturb=True,
+            classifier=classifier,
+            class_label=class_id,
+            loss_type=loss_type,
+            length=200,
+            stepsize=0.05,
+            temperature=1.0,
+            top_k=10,
+            sample=True,
+            num_iterations=2,
+            grad_length=10000,
+            horizon_length=1,
+            window_length=0,
+            decay=False,
+            gamma=1,
+            gm_scale=0.8,
+            kl_scale=0.01
+        )
+
+        dl=discrim_loss.data.cpu().numpy().tolist()
+        print('resp: {} , loss: {}'.format(tokenizer.decode(pert_gen_tok_text.tolist()[0]),dl))
+        if(dl<min_discrim_loss):
+            min_discrim_loss=dl
+            selected_pert_gen_tok_text=pert_gen_tok_text
     output_so_far = (
-            pert_gen_tok_text if output_so_far is None
-            else torch.cat((output_so_far, pert_gen_tok_text), dim=1)
+            selected_pert_gen_tok_text if output_so_far is None
+            else torch.cat((output_so_far, selected_pert_gen_tok_text), dim=1)
     )
     if(output_so_far.shape[1]>50):
         index=(output_so_far.squeeze(dim=0)==50256).nonzero()[-3].cpu().numpy()[0]
         output_so_far=output_so_far[:,index:-1]
-    if device == 'cuda':
-        torch.cuda.empty_cache()
-    pert_gen_tok_texts.append(pert_gen_tok_text)
+    #if device == 'cuda':
+    #    torch.cuda.empty_cache()
+    pert_gen_tok_texts.append(selected_pert_gen_tok_text)
     if classifier is not None:
-        discrim_losses.append(discrim_loss.data.cpu().numpy())
+        discrim_losses.append(min_discrim_loss)
     losses_in_time.append(loss_in_time)
-    bot = tokenizer.decode(pert_gen_tok_text.tolist()[0])
+    bot = tokenizer.decode(selected_pert_gen_tok_text.tolist()[0])
     print("bot: ",bot)
